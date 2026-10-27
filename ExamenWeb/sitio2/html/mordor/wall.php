@@ -1,6 +1,6 @@
 <?php
 // Muro de Mordor - Tablón de mensajes Orco
-// VULNERABLE: Stored XSS with weak script filter
+// SEGURO: Protegido contra Stored XSS mediante htmlspecialchars()
 
 session_name("lotrCookie");
 session_start();
@@ -46,19 +46,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $is_admin && $admin_auth) {
 }
 
 // Handle normal message submission (available to everyone)
-// BUT malicious students can try to post XSS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['message']) && !isset($_POST['unlock_admin'])) {
-    $author = $_POST['author'] ?? 'Orco Anónimo';
+    // Se sanitiza el autor opcional o se le asigna un valor por defecto seguro
+    $author = trim($_POST['author']) !== '' ? $_POST['author'] : 'Orco Anónimo';
     $message = $_POST['message'] ?? '';
 
-    // VULNERABLE: Weak filter - only blocks <script> tag
-    if (preg_match("/<script/i", $message)) {
-        $error = "¡El Ojo de Sauron bloquea tu magia oscura! ¡No se permiten scripts!";
+    if (trim($message) === '') {
+        $error = "El mensaje no puede estar vacío.";
     } else {
-        // Store without sanitization
+        // CORREGIDO: Eliminamos el filtro débil de <script> ya que ahora escapamos la salida.
+        // Guardamos el mensaje directamente en la base de datos de forma segura usando consultas preparadas.
         $stmt = $conn->prepare("INSERT INTO orc_messages (author, message) VALUES (?, ?)");
         $stmt->bind_param("ss", $author, $message);
         $stmt->execute();
+        $success = "¡Mensaje grabado con éxito en el muro!";
     }
 }
 
@@ -190,7 +191,7 @@ $messages = $conn->query("SELECT * FROM orc_messages ORDER BY created_at DESC");
                 </p>
 
                 <?php if ($auth_error): ?>
-                    <p style="color: var(--lotr-red); font-weight: bold; margin-bottom: 1rem;"><?php echo $auth_error; ?></p>
+                    <p style="color: var(--lotr-red); font-weight: bold; margin-bottom: 1rem;"><?php echo htmlspecialchars($auth_error, ENT_QUOTES, 'UTF-8'); ?></p>
                 <?php endif; ?>
 
                 <form method="POST" action="">
@@ -213,10 +214,10 @@ $messages = $conn->query("SELECT * FROM orc_messages ORDER BY created_at DESC");
             <div class="content-box">
                 <h2>📢 Escribir en el Muro</h2>
                 <?php if ($error): ?>
-                    <div class="error-message"><?php echo $error; ?></div>
+                    <div class="error-message"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php endif; ?>
                 <?php if ($success): ?>
-                    <div class="success-message"><?php echo $success; ?></div>
+                    <div class="success-message"><?php echo htmlspecialchars($success, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php endif; ?>
 
                 <form method="POST" action="">
@@ -258,12 +259,11 @@ $messages = $conn->query("SELECT * FROM orc_messages ORDER BY created_at DESC");
                                 </form>
                             <?php endif; ?>
 
-                            <div class="author"><?php echo $msg['author']; ?></div>
+                            <!-- CORREGIDO: Uso estricto de htmlspecialchars() tanto en el autor como en el mensaje -->
+                            <div class="author"><?php echo htmlspecialchars($msg['author'], ENT_QUOTES, 'UTF-8'); ?></div>
+                            <div class="text"><?php echo htmlspecialchars($msg['message'], ENT_QUOTES, 'UTF-8'); ?></div>
 
-                            <!-- XSS VULNERABILITY HERE: Message is printed without htmlspecialchars() -->
-                            <div class="text"><?php echo $msg['message']; ?></div>
-
-                            <div class="time"><?php echo $msg['created_at']; ?></div>
+                            <div class="time"><?php echo htmlspecialchars($msg['created_at'], ENT_QUOTES, 'UTF-8'); ?></div>
                         </div>
                     <?php endwhile; ?>
                 </div>
@@ -274,32 +274,6 @@ $messages = $conn->query("SELECT * FROM orc_messages ORDER BY created_at DESC");
             <div class="footer">
                 Un Anillo para gobernarlos a todos &bull; Comunicaciones de Mordor &bull; Tercera Edad
             </div>
-
-            <?php if ($is_admin && $admin_auth): ?>
-                <script>
-                    // Admin tools: Auto-refresh and alert prevention
-                    window.alert = function () { };
-
-                    // Auto-delete blocked messages
-                    (function () {
-                        const messages = document.querySelectorAll('.message');
-                        messages.forEach(msg => {
-                            const text = msg.querySelector('.text');
-                            if (text && text.innerHTML.toLowerCase().includes('alert')) {
-                                const form = msg.querySelector('form');
-                                if (form) {
-                                    const formData = new FormData(form);
-                                    fetch('', { method: 'POST', body: formData });
-                                    msg.style.opacity = '0.3';
-                                    msg.style.borderColor = 'var(--lotr-red)';
-                                }
-                            }
-                        });
-                    })();
-
-                    setTimeout(() => { location.reload(); }, 120000);
-                </script>
-            <?php endif; ?>
 
         <?php endif; ?>
     </div>
